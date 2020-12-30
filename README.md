@@ -1,4 +1,4 @@
-Stock Bot
+Stonks - Heatmap
 =========
 
-This is going to be a stock bot that lives in discord to display basic market information.
+This is a application that will be scheduled to run to pull the market heatmap from finviz.com. 
