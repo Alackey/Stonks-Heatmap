@@ -1,4 +1,4 @@
-module github.com/alackey/stockbot
+module github.com/alackey/Stonks-Heatmap
 
 go 1.15
 
