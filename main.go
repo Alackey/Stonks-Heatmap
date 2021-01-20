@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"log"
 	"os"
 
@@ -24,28 +23,54 @@ func main() {
 	ctx, cancel := chromedp.NewContext(allocCtx)
 	defer cancel()
 
-	// Get heatmap images
+	// Stock Market Heatmap
 	var stockURL string
-	if err := chromedp.Run(ctx, getStockMarketMap(&stockURL)); err != nil {
+	if err := chromedp.Run(ctx, getStockMarketHeatMap(&stockURL)); err != nil {
 		log.Fatalln("Error getting stock market heatmap:", err)
 		os.Exit(1)
 	}
 
-	// Update the database
 	err := updateURL("Stock Market", stockURL)
 	if err != nil {
-		log.Fatalln("Error updating the URL in the database:", err)
+		log.Fatalln("Error updating the Stock Market URL in the database:", err)
+		os.Exit(1)
+	}
+
+	// Crypto Heatmap
+	var ok bool
+	var cryptoURL string
+	if err := chromedp.Run(ctx, getCryptoHeatMap(&cryptoURL, &ok)); err != nil {
+		log.Fatalln("Error getting stock market heatmap:", err)
+		os.Exit(1)
+	} else if !ok {
+		log.Fatalln("Error getting the Coin360.com heatmap url from the share popup")
+		os.Exit(1)
+	}
+
+	err = updateURL("Crypto", cryptoURL)
+	if err != nil {
+		log.Fatalln("Error updating the Crypto URL in the database:", err)
 		os.Exit(1)
 	}
 }
 
-// getStockMarketMap gets the stock market heatmap image url
-func getStockMarketMap(stockURL *string) chromedp.Tasks {
+// getStockMarketHeatMap gets the stock market heatmap image url
+func getStockMarketHeatMap(url *string) chromedp.Tasks {
 	return chromedp.Tasks{
 		chromedp.Navigate("https://finviz.com/map.ashx?t=sec"),
 		chromedp.WaitVisible(".chart", chromedp.ByQuery),
 		chromedp.Click("//*[@id=\"share-map\"]", chromedp.NodeVisible),
-		chromedp.Value("//*[@id=\"static\"]", stockURL, chromedp.NodeVisible),
+		chromedp.Value("//*[@id=\"static\"]", url, chromedp.NodeVisible),
+	}
+}
+
+// getCryptoHeatMap gets the stock market heatmap image url
+func getCryptoHeatMap(url *string, ok *bool) chromedp.Tasks {
+	return chromedp.Tasks{
+		chromedp.Navigate("https://coin360.com/"),
+		chromedp.WaitVisible("//*[@id=\"MAP_ID\"]"),
+		chromedp.Click("//*[@id=\"app\"]/section/div[1]/section/div[2]/div[3]/div[1]/div", chromedp.NodeVisible),
+		chromedp.AttributeValue("/html/body/section/section/div[4]/div/div[4]/div[3]/a", "href", url, ok, chromedp.NodeVisible),
 	}
 }
 
