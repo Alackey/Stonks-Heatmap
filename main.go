@@ -4,6 +4,7 @@ import (
 	"context"
 	"log"
 	"os"
+	"time"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
@@ -24,16 +25,18 @@ func main() {
 	defer cancel()
 
 	// Stock Market Heatmap
-	var stockURL string
-	if err := chromedp.Run(ctx, getStockMarketHeatMap(&stockURL)); err != nil {
-		log.Fatalln("Error getting stock market heatmap:", err)
-		os.Exit(1)
-	}
+	if isMarketHours() {
+		var stockURL string
+		if err := chromedp.Run(ctx, getStockMarketHeatMap(&stockURL)); err != nil {
+			log.Fatalln("Error getting stock market heatmap:", err)
+			os.Exit(1)
+		}
 
-	err := updateURL("Stock Market", stockURL)
-	if err != nil {
-		log.Fatalln("Error updating the Stock Market URL in the database:", err)
-		os.Exit(1)
+		err := updateURL("Stock Market", stockURL)
+		if err != nil {
+			log.Fatalln("Error updating the Stock Market URL in the database:", err)
+			os.Exit(1)
+		}
 	}
 
 	// Crypto Heatmap
@@ -47,11 +50,24 @@ func main() {
 		os.Exit(1)
 	}
 
-	err = updateURL("Crypto", cryptoURL)
+	err := updateURL("Crypto", cryptoURL)
 	if err != nil {
 		log.Fatalln("Error updating the Crypto URL in the database:", err)
 		os.Exit(1)
 	}
+}
+
+// isMarketHours checks if the market is open at the current time
+func isMarketHours() bool {
+	// Market hours: 9am - 11:59pm UTC and 12am UTC next day
+	currentTime := time.Now().UTC()
+	currentHour := currentTime.Hour()
+
+	if (currentTime.Weekday() != time.Saturday && currentTime.Weekday() != time.Sunday && (currentHour == 0 || (9 <= currentHour && currentHour <= 23))) ||
+		(currentTime.Weekday() == time.Saturday && currentHour == 0) {
+		return true
+	}
+	return false
 }
 
 // getStockMarketHeatMap gets the stock market heatmap image url
