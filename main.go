@@ -14,6 +14,7 @@ import (
 
 func main() {
 	// Setup browser
+	log.Println("Creating browser")
 	opts := append(chromedp.DefaultExecAllocatorOptions[:],
 		chromedp.WindowSize(1920, 1080),
 	)
@@ -26,12 +27,14 @@ func main() {
 
 	// Stock Market Heatmap
 	if isMarketHours() {
+		log.Println("Getting stock market heatmap")
 		var stockURL string
 		if err := chromedp.Run(ctx, getStockMarketHeatMap(&stockURL)); err != nil {
 			log.Fatalln("Error getting stock market heatmap:", err)
 			os.Exit(1)
 		}
 
+		log.Println("Updating stock market heatmap")
 		err := updateURL("Stock Market", stockURL)
 		if err != nil {
 			log.Fatalln("Error updating the Stock Market URL in the database:", err)
@@ -40,6 +43,7 @@ func main() {
 	}
 
 	// Crypto Heatmap
+	log.Println("Getting crypto heatmap")
 	var ok bool
 	var cryptoURL string
 	if err := chromedp.Run(ctx, getCryptoHeatMap(&cryptoURL, &ok)); err != nil {
@@ -50,6 +54,7 @@ func main() {
 		os.Exit(1)
 	}
 
+	log.Println("Updating crypto heatmap")
 	err := updateURL("Crypto", cryptoURL)
 	if err != nil {
 		log.Fatalln("Error updating the Crypto URL in the database:", err)
