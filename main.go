@@ -74,7 +74,7 @@ func isMarketHours() bool {
 func saveStockMarketHeatMap(ctx context.Context) error {
 	log.Println("Getting stock market heatmap")
 	var buf []byte
-	if err := chromedp.Run(ctx, screenshot(`https://finviz.com/map.ashx?t=sec`, `.chart`, &buf, chromedp.ByQuery)); err != nil {
+	if err := chromedp.Run(ctx, screenshot(`https://finviz.com/map.ashx?t=sec`, `.chart`, &buf)); err != nil {
 		return err
 	}
 
@@ -89,7 +89,7 @@ func saveStockMarketHeatMap(ctx context.Context) error {
 func saveCryptoHeatMap(ctx context.Context) error {
 	log.Println("Getting crypto heatmap")
 	var buf []byte
-	if err := chromedp.Run(ctx, screenshot("https://coin360.com/", "#MAP_ID", &buf, chromedp.ByID)); err != nil {
+	if err := chromedp.Run(ctx, screenshot("https://coin360.com/", "//*[@id=\"MAP_ID\"]/div[2]/canvas", &buf)); err != nil {
 		return err
 	}
 
@@ -101,11 +101,11 @@ func saveCryptoHeatMap(ctx context.Context) error {
 }
 
 // screenshot takes a screenshot of a specific element.
-func screenshot(urlstr, sel string, res *[]byte, opt chromedp.QueryOption) chromedp.Tasks {
+func screenshot(urlstr, sel string, res *[]byte) chromedp.Tasks {
 	return chromedp.Tasks{
 		chromedp.Navigate(urlstr),
-		chromedp.WaitVisible(sel, chromedp.ByQuery),
-		chromedp.Screenshot(sel, res, chromedp.NodeVisible, opt),
+		chromedp.WaitVisible(sel),
+		chromedp.Screenshot(sel, res),
 	}
 }
 

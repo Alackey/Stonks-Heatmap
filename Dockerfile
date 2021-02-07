@@ -1,7 +1,7 @@
 FROM golang:1.15-alpine
 
 # Install Chromium
-RUN apk add chromium
+RUN apk add --no-cache chromium
 
 # Move to working directory /build
 WORKDIR /build
