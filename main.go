@@ -1,18 +1,32 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"fmt"
 	"log"
+	"net/http"
 	"os"
 	"time"
 
-	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
-	"github.com/aws/aws-sdk-go/service/dynamodb"
+	"github.com/aws/aws-sdk-go/service/s3/s3manager"
 	"github.com/chromedp/chromedp"
 )
 
 func main() {
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8080"
+	}
+
+	http.HandleFunc("/", GetHeatmap)
+	log.Println("Listening on port", port)
+	log.Fatal(http.ListenAndServe(":"+port, nil))
+}
+
+// GetHeatmap gets the heatmaps for stocks and crypto
+func GetHeatmap(w http.ResponseWriter, r *http.Request) {
 	// Setup browser
 	log.Println("Creating browser")
 	opts := append(chromedp.DefaultExecAllocatorOptions[:],
@@ -27,39 +41,20 @@ func main() {
 
 	// Stock Market Heatmap
 	if isMarketHours() {
-		log.Println("Getting stock market heatmap")
-		var stockURL string
-		if err := chromedp.Run(ctx, getStockMarketHeatMap(&stockURL)); err != nil {
-			log.Fatalln("Error getting stock market heatmap:", err)
-			os.Exit(1)
-		}
-
-		log.Println("Updating stock market heatmap")
-		err := updateURL("Stock Market", stockURL)
+		err := saveStockMarketHeatMap(ctx)
 		if err != nil {
-			log.Fatalln("Error updating the Stock Market URL in the database:", err)
-			os.Exit(1)
+			log.Println("Error getting stock market heatmap:", err)
 		}
 	}
 
 	// Crypto Heatmap
-	log.Println("Getting crypto heatmap")
-	var ok bool
-	var cryptoURL string
-	if err := chromedp.Run(ctx, getCryptoHeatMap(&cryptoURL, &ok)); err != nil {
-		log.Fatalln("Error getting stock market heatmap:", err)
-		os.Exit(1)
-	} else if !ok {
-		log.Fatalln("Error getting the Coin360.com heatmap url from the share popup")
-		os.Exit(1)
+	err := saveCryptoHeatMap(ctx)
+	if err != nil {
+		log.Println("Error getting crypto heatmap:", err)
 	}
 
-	log.Println("Updating crypto heatmap")
-	err := updateURL("Crypto", cryptoURL)
-	if err != nil {
-		log.Fatalln("Error updating the Crypto URL in the database:", err)
-		os.Exit(1)
-	}
+	fmt.Println("Finished getting heatmaps")
+	w.WriteHeader(http.StatusOK)
 }
 
 // isMarketHours checks if the market is open at the current time
@@ -75,49 +70,63 @@ func isMarketHours() bool {
 	return false
 }
 
-// getStockMarketHeatMap gets the stock market heatmap image url
-func getStockMarketHeatMap(url *string) chromedp.Tasks {
+// saveStockMarketHeatMap gets the stock market heatmap
+func saveStockMarketHeatMap(ctx context.Context) error {
+	log.Println("Getting stock market heatmap")
+	var buf []byte
+	if err := chromedp.Run(ctx, screenshot(`https://finviz.com/map.ashx?t=sec`, `.chart`, &buf, chromedp.ByQuery)); err != nil {
+		return err
+	}
+
+	log.Println("Uploading stock market heatmap")
+	if err := uploadImage("marketHeatmap.png", buf); err != nil {
+		return err
+	}
+	return nil
+}
+
+// saveCryptoHeatMap gets the stock market heatmap image url
+func saveCryptoHeatMap(ctx context.Context) error {
+	log.Println("Getting crypto heatmap")
+	var buf []byte
+	if err := chromedp.Run(ctx, screenshot("https://coin360.com/", "#MAP_ID", &buf, chromedp.ByID)); err != nil {
+		return err
+	}
+
+	log.Println("Uploading crypto heatmap")
+	if err := uploadImage("cryptoHeatmap.png", buf); err != nil {
+		return err
+	}
+	return nil
+}
+
+// screenshot takes a screenshot of a specific element.
+func screenshot(urlstr, sel string, res *[]byte, opt chromedp.QueryOption) chromedp.Tasks {
 	return chromedp.Tasks{
-		chromedp.Navigate("https://finviz.com/map.ashx?t=sec"),
-		chromedp.WaitVisible(".chart", chromedp.ByQuery),
-		chromedp.Click("//*[@id=\"share-map\"]", chromedp.NodeVisible),
-		chromedp.Value("//*[@id=\"static\"]", url, chromedp.NodeVisible),
+		chromedp.Navigate(urlstr),
+		chromedp.WaitVisible(sel, chromedp.ByQuery),
+		chromedp.Screenshot(sel, res, chromedp.NodeVisible, opt),
 	}
 }
 
-// getCryptoHeatMap gets the stock market heatmap image url
-func getCryptoHeatMap(url *string, ok *bool) chromedp.Tasks {
-	return chromedp.Tasks{
-		chromedp.Navigate("https://coin360.com/"),
-		chromedp.WaitVisible("//*[@id=\"MAP_ID\"]"),
-		chromedp.Click("//*[@id=\"app\"]/section/div[1]/section/div[2]/div[3]/div[1]/div", chromedp.NodeVisible),
-		chromedp.AttributeValue("/html/body/section/section/div[4]/div/div[4]/div[3]/a", "href", url, ok, chromedp.NodeVisible),
-	}
-}
-
-// updateURL calls updates the image url in DynamoDB
-func updateURL(key string, url string) error {
+// uploadImage uploads image to the heatmap S3 bucket
+func uploadImage(keyName string, buf []byte) error {
 	sess := session.Must(session.NewSessionWithOptions(session.Options{
 		SharedConfigState: session.SharedConfigEnable,
 	}))
 
-	svc := dynamodb.New(sess)
-	input := &dynamodb.UpdateItemInput{
-		ExpressionAttributeValues: map[string]*dynamodb.AttributeValue{
-			":u": {
-				S: aws.String(url),
-			},
-		},
-		Key: map[string]*dynamodb.AttributeValue{
-			"Name": {
-				S: aws.String(key),
-			},
-		},
-		TableName:        aws.String("Stonks_Heatmaps"),
-		UpdateExpression: aws.String("SET Image = :u"),
+	uploader := s3manager.NewUploader(sess)
+
+	bucket := "stockbot-heatmap"
+	body := bytes.NewReader(buf)
+
+	upParams := &s3manager.UploadInput{
+		Bucket: &bucket,
+		Key:    &keyName,
+		Body:   body,
 	}
 
-	_, err := svc.UpdateItem(input)
+	_, err := uploader.Upload(upParams)
 	if err != nil {
 		return err
 	}
